@@ -1,0 +1,224 @@
+From: Nathan Nutter <nnutter@genome.wustl.edu>
+Date: Tue, 19 Feb 2013 14:08:09 -0600
+Subject: Isolated Makefile
+
+---
+ Makefile           |   24 +++++--------
+ asciidoc.conf      |   97 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ manpage-base.xsl   |   35 +++++++++++++++++++
+ manpage-normal.xsl |   13 +++++++
+ 4 files changed, 154 insertions(+), 15 deletions(-)
+ create mode 100644 asciidoc.conf
+ create mode 100644 manpage-base.xsl
+ create mode 100644 manpage-normal.xsl
+
+diff --git a/Makefile b/Makefile
+index 05cdd5c..a3e1d1c 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,19 +1,15 @@
+--include ../../config.mak.autogen
+--include ../../config.mak
+-
+-prefix ?= /usr/local
++prefix ?= /usr
+ mandir ?= $(prefix)/share/man
+-libexecdir ?= $(prefix)/libexec/git-core
+-gitdir ?= $(shell git --exec-path)
+-man1dir ?= $(mandir)/man1
++gitdir ?= $(DESTDIR)$(shell git --exec-path)
++man1dir ?= $(DESTDIR)$(mandir)/man1
+ 
+ gitver ?= $(word 3,$(shell git --version))
+ 
+ # this should be set to a 'standard' bsd-type install program
+ INSTALL ?= install
+ 
+-ASCIIDOC_CONF      = ../../Documentation/asciidoc.conf
+-MANPAGE_NORMAL_XSL =  ../../Documentation/manpage-normal.xsl
++ASCIIDOC_CONF      = asciidoc.conf
++MANPAGE_NORMAL_XSL = manpage-normal.xsl
+ 
+ GIT_SUBTREE_SH := git-subtree.sh
+ GIT_SUBTREE    := git-subtree
+@@ -29,12 +25,10 @@ $(GIT_SUBTREE): $(GIT_SUBTREE_SH)
+ 
+ doc: $(GIT_SUBTREE_DOC)
+ 
+-install: $(GIT_SUBTREE)
+-	$(INSTALL) -m 755 $(GIT_SUBTREE) $(libexecdir)
+-
+-install-doc: install-man
+-
+-install-man: $(GIT_SUBTREE_DOC)
++install: $(GIT_SUBTREE) $(GIT_SUBTREE_DOC)
++	mkdir -p $(gitdir)
++	$(INSTALL) -m 755 $(GIT_SUBTREE) $(gitdir)
++	mkdir -p $(man1dir)
+ 	$(INSTALL) -m 644 $^ $(man1dir)
+ 
+ $(GIT_SUBTREE_DOC): $(GIT_SUBTREE_XML)
+diff --git a/asciidoc.conf b/asciidoc.conf
+new file mode 100644
+index 0000000..a26d245
+--- /dev/null
++++ b/asciidoc.conf
+@@ -0,0 +1,97 @@
++## linkgit: macro
++#
++# Usage: linkgit:command[manpage-section]
++#
++# Note, {0} is the manpage section, while {target} is the command.
++#
++# Show GIT link as: <command>(<section>); if section is defined, else just show
++# the command.
++
++[macros]
++(?su)[\\]?(?P<name>linkgit):(?P<target>\S*?)\[(?P<attrlist>.*?)\]=
++
++[attributes]
++asterisk=&#42;
++plus=&#43;
++caret=&#94;
++startsb=&#91;
++endsb=&#93;
++backslash=&#92;
++tilde=&#126;
++apostrophe=&#39;
++backtick=&#96;
++litdd=&#45;&#45;
++
++ifdef::backend-docbook[]
++[linkgit-inlinemacro]
++{0%{target}}
++{0#<citerefentry>}
++{0#<refentrytitle>{target}</refentrytitle><manvolnum>{0}</manvolnum>}
++{0#</citerefentry>}
++endif::backend-docbook[]
++
++ifdef::backend-docbook[]
++ifndef::git-asciidoc-no-roff[]
++# "unbreak" docbook-xsl v1.68 for manpages. v1.69 works with or without this.
++# v1.72 breaks with this because it replaces dots not in roff requests.
++[listingblock]
++<example><title>{title}</title>
++<literallayout>
++ifdef::doctype-manpage[]
++&#10;.ft C&#10;
++endif::doctype-manpage[]
++|
++ifdef::doctype-manpage[]
++&#10;.ft&#10;
++endif::doctype-manpage[]
++</literallayout>
++{title#}</example>
++endif::git-asciidoc-no-roff[]
++
++ifdef::git-asciidoc-no-roff[]
++ifdef::doctype-manpage[]
++# The following two small workarounds insert a simple paragraph after screen
++[listingblock]
++<example><title>{title}</title>
++<literallayout>
++|
++</literallayout><simpara></simpara>
++{title#}</example>
++
++[verseblock]
++<formalpara{id? id="{id}"}><title>{title}</title><para>
++{title%}<literallayout{id? id="{id}"}>
++{title#}<literallayout>
++|
++</literallayout>
++{title#}</para></formalpara>
++{title%}<simpara></simpara>
++endif::doctype-manpage[]
++endif::git-asciidoc-no-roff[]
++endif::backend-docbook[]
++
++ifdef::doctype-manpage[]
++ifdef::backend-docbook[]
++[header]
++template::[header-declarations]
++<refentry>
++<refmeta>
++<refentrytitle>{mantitle}</refentrytitle>
++<manvolnum>{manvolnum}</manvolnum>
++<refmiscinfo class="source">Git</refmiscinfo>
++<refmiscinfo class="version">{git_version}</refmiscinfo>
++<refmiscinfo class="manual">Git Manual</refmiscinfo>
++</refmeta>
++<refnamediv>
++  <refname>{manname}</refname>
++  <refpurpose>{manpurpose}</refpurpose>
++</refnamediv>
++endif::backend-docbook[]
++endif::doctype-manpage[]
++
++ifdef::backend-xhtml11[]
++[attributes]
++git-relative-html-prefix=
++[linkgit-inlinemacro]
++<a href="{git-relative-html-prefix}{target}.html">{target}{0?({0})}</a>
++endif::backend-xhtml11[]
+diff --git a/manpage-base.xsl b/manpage-base.xsl
+new file mode 100644
+index 0000000..a264fa6
+--- /dev/null
++++ b/manpage-base.xsl
+@@ -0,0 +1,35 @@
++<!-- manpage-base.xsl:
++     special formatting for manpages rendered from asciidoc+docbook -->
++<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
++		version="1.0">
++
++<!-- these params silence some output from xmlto -->
++<xsl:param name="man.output.quietly" select="1"/>
++<xsl:param name="refentry.meta.get.quietly" select="1"/>
++
++<!-- convert asciidoc callouts to man page format;
++     git.docbook.backslash and git.docbook.dot params
++     must be supplied by another XSL file or other means -->
++<xsl:template match="co">
++	<xsl:value-of select="concat(
++			      $git.docbook.backslash,'fB(',
++			      substring-after(@id,'-'),')',
++			      $git.docbook.backslash,'fR')"/>
++</xsl:template>
++<xsl:template match="calloutlist">
++	<xsl:value-of select="$git.docbook.dot"/>
++	<xsl:text>sp&#10;</xsl:text>
++	<xsl:apply-templates/>
++	<xsl:text>&#10;</xsl:text>
++</xsl:template>
++<xsl:template match="callout">
++	<xsl:value-of select="concat(
++			      $git.docbook.backslash,'fB',
++			      substring-after(@arearefs,'-'),
++			      '. ',$git.docbook.backslash,'fR')"/>
++	<xsl:apply-templates/>
++	<xsl:value-of select="$git.docbook.dot"/>
++	<xsl:text>br&#10;</xsl:text>
++</xsl:template>
++
++</xsl:stylesheet>
+diff --git a/manpage-normal.xsl b/manpage-normal.xsl
+new file mode 100644
+index 0000000..a48f5b1
+--- /dev/null
++++ b/manpage-normal.xsl
+@@ -0,0 +1,13 @@
++<!-- manpage-normal.xsl:
++     special settings for manpages rendered from asciidoc+docbook
++     handles anything we want to keep away from docbook-xsl 1.72.0 -->
++<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
++		version="1.0">
++
++<xsl:import href="manpage-base.xsl"/>
++
++<!-- these are the normal values for the roff control characters -->
++<xsl:param name="git.docbook.backslash">\</xsl:param>
++<xsl:param name="git.docbook.dot"	>.</xsl:param>
++
++</xsl:stylesheet>
+-- 
