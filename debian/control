@@ -1,0 +1,15 @@
+Source: git-subtree
+Section: vcs
+Priority: extra
+Maintainer: Nathaniel Nutter <nnutter@genome.wustl.edu>
+Build-Depends: debhelper (>= 7.0.0), git-core, asciidoc, xmlto
+Standards-Version: 3.9.2
+Homepage: https://github.com/git/git/tree/master/contrib/subtree
+
+Package: git-subtree
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, git-core
+Description: Merge subtrees together and split repository into subtrees.
+ Subtrees allow subprojects to be included within a subdirectory
+ of the main project, optionally including the subproject's
+ entire history.
